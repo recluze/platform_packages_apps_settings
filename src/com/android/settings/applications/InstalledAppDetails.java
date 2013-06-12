@@ -132,6 +132,9 @@ public class InstalledAppDetails extends Activity
     private static final int DLG_FORCE_STOP = DLG_BASE + 5;
     private static final int DLG_MOVE_FAILED = DLG_BASE + 6;
     
+    // Apex Set Permissions Button 
+    private Button mSetPermissionsButton;
+    
     private Handler mHandler = new Handler() {
         public void handleMessage(Message msg) {
             // If the activity is gone, don't process any more messages.
@@ -328,6 +331,10 @@ public class InstalledAppDetails extends Activity
         mClearCacheButton = (Button) findViewById(R.id.clear_cache_button);
         
         mActivitiesButton = (Button)findViewById(R.id.clear_activities_button);
+        
+        // Set Apex Permissions button
+        mSetPermissionsButton = (Button)findViewById(R.id.set_permissions_button);
+        mSetPermissionsButton.setOnClickListener(this);
     }
 
     // Utility method to set applicaiton label and icon.
@@ -784,6 +791,8 @@ public class InstalledAppDetails extends Activity
             mMoveInProgress = true;
             refreshButtons();
             mPm.movePackage(mAppEntry.info.packageName, mPackageMoveObserver, moveFlags);
+        } else if (v == mSetPermissionsButton) { 
+            Log.d("APEX:PackageManager", "Calling SetApexPermissions activity for setting permissions from App settings.");
         }
     }
 }
