@@ -17,6 +17,7 @@
 package com.android.settings.applications;
 
 import com.android.internal.content.PackageHelper;
+import com.android.internal.util.XmlUtils;
 import com.android.settings.R;
 import com.android.settings.applications.ApplicationsState.AppEntry;
 
@@ -48,10 +49,18 @@ import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.text.format.Formatter;
 import android.util.Log;
+import android.util.Xml;
 
+import java.io.IOException;
+import java.io.StringReader;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.List;
+
+import org.xml.sax.InputSource;
+import org.xmlpull.v1.XmlPullParser;
+import org.xmlpull.v1.XmlPullParserException;
+
 import android.content.ComponentName;
 import android.view.View;
 import android.widget.AppSecurityPermissions;
@@ -708,6 +717,7 @@ public class InstalledAppDetails extends Activity
             mForceStopButton.setOnClickListener(InstalledAppDetails.this);
         }
     };
+    private int SET_PERMISSION_CODE = 1;
     
     private void checkForceStop() {
         Intent intent = new Intent(Intent.ACTION_QUERY_PACKAGE_RESTART,
@@ -792,8 +802,89 @@ public class InstalledAppDetails extends Activity
             refreshButtons();
             mPm.movePackage(mAppEntry.info.packageName, mPackageMoveObserver, moveFlags);
         } else if (v == mSetPermissionsButton) { 
-            Log.d("APEX:PackageManager", "Calling SetApexPermissions activity for setting permissions from App settings.");
+            Log.d("APEX:Settings", "Calling SetApexPermissions activity for setting permissions from App settings.");
+            Intent intent = new Intent("android.intent.apex.action.SETPERMISSIONS");
+            intent.addCategory(Intent.CATEGORY_DEFAULT);   
+        
+            ArrayList<String> al = new ArrayList<String>(); // permissions list
+            ArrayList<String> dp = new ArrayList<String>(); // denied permissions 
+            
+            intent.putExtra("packageName", mPackageInfo.packageName);
+            
+            // Need a different package info for permissions. Field doesn't have them.
+            PackageInfo pkgInfo = null;
+            try {
+                pkgInfo = mPm.getPackageInfo(packageName, PackageManager.GET_PERMISSIONS);
+            } catch (NameNotFoundException e) {
+                Log.d("APEX:Settings", "Failed to find package to get permissions: " + packageName);
+                e.printStackTrace();
+            }
+            if (pkgInfo != null) { 
+                for(String permName: pkgInfo.requestedPermissions)
+                    al.add(permName);
+                
+                String packagePolicy = mPm.getPackagePolicy(packageName);
+                Log.d("APEX:Settings", "Found package policy: " + packagePolicy);
+                dp = new ApexPolicyParserHelper().getDeniedPermissionList(packagePolicy);
+                intent.putStringArrayListExtra("permsArrayList", al);
+                intent.putStringArrayListExtra("deniedPermsArrayList", dp);
+                startActivityForResult(intent, SET_PERMISSION_CODE);       
+            } 
         }
+    }
+    
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == SET_PERMISSION_CODE) { 
+            String policyText = mPackageInfo.packageName + ":" + data.getStringExtra("policyText");       
+            Log.d("APEX:Settings", "Reveived policy text in main installer: " + policyText);
+            Log.d("APEX:Settings", "Updating package policy for: " + mPackageInfo.packageName);
+            mPm.setPackagePolicy("com.android.settings", policyText);
+        }
+        super.onActivityResult(requestCode, resultCode, data);
     }
 }
 
+
+class ApexPolicyParserHelper {
+    public ArrayList<String> getDeniedPermissionList(String policyText) {
+        XmlPullParser parser = Xml.newPullParser();
+        ArrayList<String> deniedPerms = new ArrayList<String>();
+
+        try {
+            parser.setInput(new StringReader(policyText));
+            XmlUtils.beginDocument(parser, "Policies");
+
+            boolean isDeniedPolicy = false; 
+            while (true) {
+                parser.next();
+                if (parser.getEventType() == XmlPullParser.END_DOCUMENT) {
+                    break;
+                } else if (parser.getEventType() == XmlPullParser.START_TAG) {
+                    String name = parser.getName();
+                    Log.d("APEX:Settings", "Parsing for denied perms. Found start tag: " + name);
+                    if ("Policy".equals(name)) {
+                        if ("Deny".equals(parser.getAttributeValue(null, "Effect"))) {
+                            Log.d("APEX:Settings", "Parsing for denied perms. Found denied policy.");
+                            isDeniedPolicy = true; 
+                        } 
+                    } else if ("Permission".equals(name) && isDeniedPolicy) {
+                        String deniedPermName = parser.getAttributeValue(null, "Name"); 
+                        Log.d("APEX:Settings", "Parsing for denied perms. Found denied policy with name: " + deniedPermName);
+                        deniedPerms.add(deniedPermName);
+                    }
+                } else if (parser.getEventType() == XmlPullParser.END_TAG) {
+                    if ("Policy".equals(parser.getName())) {
+                        isDeniedPolicy = false;
+                    }
+                }
+            }
+        } catch (XmlPullParserException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        
+        return deniedPerms;
+    }
+}
