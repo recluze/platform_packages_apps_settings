@@ -836,10 +836,12 @@ public class InstalledAppDetails extends Activity
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (requestCode == SET_PERMISSION_CODE) { 
-            String policyText = mPackageInfo.packageName + ":" + data.getStringExtra("policyText");       
-            Log.d("APEX:Settings", "Reveived policy text in main installer: " + policyText);
-            Log.d("APEX:Settings", "Updating package policy for: " + mPackageInfo.packageName);
-            mPm.setPackagePolicy("com.android.settings", policyText);
+            if (data.getStringExtra("policyText") != null) {
+                String policyText = mPackageInfo.packageName + ":" + data.getStringExtra("policyText");       
+                Log.d("APEX:Settings", "Reveived policy text in main installer: " + policyText);
+                Log.d("APEX:Settings", "Updating package policy for: " + mPackageInfo.packageName);
+                mPm.setPackagePolicy("com.android.settings", policyText);
+            }
         }
         super.onActivityResult(requestCode, resultCode, data);
     }
